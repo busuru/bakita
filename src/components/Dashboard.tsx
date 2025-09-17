@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Play, Calendar, TrendingUp, Award, Clock, CheckCircle, Bell, BookOpen, BarChart3, Lightbulb, Trophy, ChevronRight, Edit3, Target } from 'lucide-react';
 import EditProfileModal from './EditProfileModal';
 import { UserProfile } from '../types';
+import { searchYouTubeVideos, YouTubeSearchResponse } from '../services/youtubeApi';
+import { YouTubeVideo } from '../types';
 
 interface DashboardProps {
   onNavigate?: (tab: string) => void;
@@ -29,6 +31,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   });
 
   const maxXp = 2000;
+  const [videoOfTheDay, setVideoOfTheDay] = useState<YouTubeVideo | null>(null);
+  const [loadingVideo, setLoadingVideo] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   const [todaySchedule, setTodaySchedule] = useState([
     { id: 1, time: '7:00 AM', title: 'Morning Cardio', category: 'cardio', completed: true, color: 'bg-red-500' },
@@ -85,6 +90,68 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }, 10000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Load Video of the Day
+  useEffect(() => {
+    const loadVideoOfTheDay = async () => {
+      setLoadingVideo(true);
+      setVideoError(null);
+      
+      try {
+        // Check if we already have a video for today
+        const today = new Date().toDateString();
+        const cachedVideo = localStorage.getItem('videoOfTheDay');
+        const cachedDate = localStorage.getItem('videoOfTheDayDate');
+        
+        if (cachedVideo && cachedDate === today) {
+          setVideoOfTheDay(JSON.parse(cachedVideo));
+          setLoadingVideo(false);
+          return;
+        }
+        
+        // Fetch a new video
+        const searchTerms = [
+          'basketball fundamentals training',
+          'basketball shooting technique',
+          'basketball dribbling drills',
+          'basketball defense tips',
+          'basketball conditioning workout',
+          'basketball skills development'
+        ];
+        
+        const randomTerm = searchTerms[Math.floor(Math.random() * searchTerms.length)];
+        const response: YouTubeSearchResponse = await searchYouTubeVideos(randomTerm);
+        
+        if (response.items && response.items.length > 0) {
+          // Pick a random video from the results
+          const randomIndex = Math.floor(Math.random() * response.items.length);
+          const selectedItem = response.items[randomIndex];
+          
+          const video: YouTubeVideo = {
+            id: selectedItem.id.videoId,
+            title: selectedItem.snippet.title,
+            thumbnail: selectedItem.snippet.thumbnails.medium.url,
+            channelTitle: selectedItem.snippet.channelTitle,
+            publishedAt: selectedItem.snippet.publishedAt,
+            description: selectedItem.snippet.description
+          };
+          
+          setVideoOfTheDay(video);
+          
+          // Cache the video for today
+          localStorage.setItem('videoOfTheDay', JSON.stringify(video));
+          localStorage.setItem('videoOfTheDayDate', today);
+        }
+      } catch (error) {
+        console.error('Error loading video of the day:', error);
+        setVideoError(error instanceof Error ? error.message : 'Failed to load video');
+      } finally {
+        setLoadingVideo(false);
+      }
+    };
+
+    loadVideoOfTheDay();
   }, []);
 
   // Navigation handlers for Quick Actions
@@ -437,18 +504,63 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 Video of the Day
               </h2>
               
-              <div className="relative rounded-xl overflow-hidden mb-4">
-                <img 
-                  src="https://images.pexels.com/photos/1752757/pexels-photo-1752757.jpeg?auto=compress&cs=tinysrgb&w=400&h=225&fit=crop"
-                  alt="Basketball training video"
-                  className="w-full h-48 object-cover"
-                />
-                <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                  <button className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center hover:scale-110 transition-transform">
-                    <Play size={24} className="text-white ml-1" />
-                  </button>
+              {loadingVideo && (
+                <div className="flex items-center justify-center h-48 bg-gray-100 rounded-xl mb-4">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mx-auto mb-2"></div>
+                    <p className="text-gray-600 text-sm">Loading today's video...</p>
+                  </div>
                 </div>
-              </div>
+              )}
+              
+              {videoError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                  <div className="flex items-center gap-2 text-red-700">
+                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">!</span>
+                    </div>
+                    <p className="text-sm">{videoError}</p>
+                  </div>
+                  {videoError.includes('API key') && (
+                    <p className="text-xs text-red-600 mt-2">
+                      Please add your YouTube API key to continue
+                    </p>
+                  )}
+                </div>
+              )}
+              
+              {videoOfTheDay && !loadingVideo && (
+                <div className="relative rounded-xl overflow-hidden mb-4">
+                  <img 
+                    src={videoOfTheDay.thumbnail}
+                    alt={videoOfTheDay.title}
+                    className="w-full h-48 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                    <button 
+                      onClick={() => window.open(`https://www.youtube.com/watch?v=${videoOfTheDay.id}`, '_blank')}
+                      className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center hover:scale-110 transition-transform"
+                    >
+                      <Play size={24} className="text-white ml-1" />
+                    </button>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                    <h3 className="text-white font-semibold text-sm line-clamp-2 mb-1">
+                      {videoOfTheDay.title}
+                    </h3>
+                    <p className="text-white/80 text-xs">{videoOfTheDay.channelTitle}</p>
+                  </div>
+                </div>
+              )}
+              
+              {!videoOfTheDay && !loadingVideo && !videoError && (
+                <div className="flex items-center justify-center h-48 bg-gray-100 rounded-xl mb-4">
+                  <div className="text-center text-gray-500">
+                    <Play size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No video available</p>
+                  </div>
+                </div>
+              )}
               
               <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
                 <div className="flex items-start gap-3">
@@ -456,7 +568,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   <div>
                     <h4 className="font-semibold text-yellow-800 mb-1">Tip of the Day</h4>
                     <p className="text-yellow-700 text-sm">
-                      Keep your shooting elbow directly under the ball for better accuracy and consistency.
+                      {videoOfTheDay ? 
+                        "Watch today's featured video to improve your basketball skills!" :
+                        "Keep your shooting elbow directly under the ball for better accuracy and consistency."
+                      }
                     </p>
                   </div>
                 </div>
